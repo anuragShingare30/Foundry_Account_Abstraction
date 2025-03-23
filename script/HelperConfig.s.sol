@@ -95,6 +95,11 @@ contract HelperConfig is Script{
     }
 
     function getAnvilConfig() public returns(NetworkConfig memory){
+         if (localNetworkConfig.account != address(0)) {
+            return localNetworkConfig;
+        }
+
+
         vm.startBroadcast(ANVIL_ADDRESS);
         EntryPoint _entryPoint = new EntryPoint();
         ERC20Mock _erc20Mock = new ERC20Mock();

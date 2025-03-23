@@ -15,6 +15,7 @@ contract BaseAccount is IAccount,Ownable  {
     ////////////////////////////////
     error BasicAccount_NotFromEntryPoint();
     error BasicAccount_NotFromEntryPointOrOwner();
+    error BaseAccount_CallFailedDuringExecute(bytes resultData);
 
 
     ////////////////////////////////
@@ -69,6 +70,8 @@ contract BaseAccount is IAccount,Ownable  {
      *                              In case there is a paymaster in the request (or the current deposit is high
      *                              enough), this value will be zero.
      * @return validationData       - Returns the SIG_SUCCESS() OR SIG_FAILUR()
+
+     @dev A signature is valid -> If it's the baseAcount Owner
      */
     function validateUserOp(
         PackedUserOperation calldata userOp,
@@ -84,10 +87,10 @@ contract BaseAccount is IAccount,Ownable  {
      * @notice execute function
      * execute a single call from the account.
      */
-    function execute(address to,uint256 value,bytes memory data,uint256 txGas) external requireOnlyFromEntryPointOrOwner() {
-        bool success = Exec.call(to, value, data, txGas);
+    function execute(address to,uint256 value,bytes memory functionData) external requireOnlyFromEntryPointOrOwner() {
+        (bool success,bytes memory resultData) = to.call{value:value}(functionData);
         if(!success){
-            Exec.revertWithReturnData();
+            revert BaseAccount_CallFailedDuringExecute(resultData);
         }
     }
 
@@ -120,6 +123,8 @@ contract BaseAccount is IAccount,Ownable  {
      *                          If the account doesn't use time-range, it is enough to return
      *                          SIG_VALIDATION_FAILED value (1) for signature failure.
      *                          Note that the validation code cannot use block.timestamp (or block.number) directly.
+
+     @dev EIP-191 version of signed data!!!!
      */
     function _validateSignature(PackedUserOperation calldata userOp, bytes32 userOpHash)
     internal returns (uint256) {
