@@ -20,18 +20,18 @@ contract PackedUserOp is Script {
 
     function run() public {
         helperConfig = new HelperConfig();
-
     }
 
     function generateSignedUserOp(
-        bytes memory functionData,
-        HelperConfig.NetworkConfig memory config
+        bytes memory executionData,
+        HelperConfig.NetworkConfig memory config,
+        address baseAccount
     ) public returns(PackedUserOperation memory){
-        uint256 nonce = vm.getNonce(config.account);
-        PackedUserOperation memory userOp = _generateUnSignedUserOp(config.account, nonce, functionData);
+        uint256 nonce = vm.getNonce(baseAccount);
+        PackedUserOperation memory userOp = _generateUnSignedUserOp(baseAccount, nonce, executionData);
 
         // get the userOpHash
-        bytes32 userOpHash = IEntryPoint(helperConfig.getConfig().entryPoint).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(userOp);
         bytes32 digest = userOpHash.toEthSignedMessageHash();
 
         // generate the signature

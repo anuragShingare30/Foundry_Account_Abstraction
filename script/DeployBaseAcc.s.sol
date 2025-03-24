@@ -15,7 +15,7 @@ contract DeployBaseAcc is Script {
         HelperConfig helperConfig = new HelperConfig();
         HelperConfig.NetworkConfig memory networkConfig = helperConfig.getConfig();
 
-        vm.startBroadcast();
+        vm.startBroadcast(networkConfig.account);
         baseAccount = new BaseAccount(networkConfig.entryPoint);
         baseAccount.transferOwnership(networkConfig.account);
         vm.stopBroadcast();

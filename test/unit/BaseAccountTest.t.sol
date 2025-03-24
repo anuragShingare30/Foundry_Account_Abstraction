@@ -12,8 +12,13 @@ import "lib/account-abstraction/contracts/interfaces/PackedUserOperation.sol";
 import {ECDSA} from "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "lib/account-abstraction/contracts/interfaces/IEntryPoint.sol";
 import {PackedUserOp} from "script/PackedUserOp.s.sol";
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+
+
 
 contract BaseaccountTest is Test{
+    using MessageHashUtils for bytes32;
+
     // errors
     error BaseAccount_CallFailedDuringExecute();
 
@@ -24,6 +29,7 @@ contract BaseaccountTest is Test{
 
     address public user = makeAddr("user");
     uint256 public AMOUNT = 1e18;
+    uint256 public ANVIL_CHAINID = 31337;
 
     function setUp() public {
         DeployBaseAcc deployBaseAcc = new DeployBaseAcc();
@@ -74,19 +80,79 @@ contract BaseaccountTest is Test{
     function test_SigPackedUserOp() public {
         assert(usdc.balanceOf(address(baseAccount)) == 0);
 
+        HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
+
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector,address(baseAccount),AMOUNT);
         bytes memory executeCallData = abi.encodeWithSelector(BaseAccount.execute.selector, address(usdc), 0, functionData);
 
-
         PackedUserOperation memory packedUserOperation = 
-            packedUserOp.generateSignedUserOp(executeCallData, helperConfig.getConfig()); //1
+            packedUserOp.generateSignedUserOp(executeCallData, config,address(baseAccount)); //1
 
-       bytes32 userOpHash = IEntryPoint(helperConfig.getConfig().entryPoint).getUserOpHash(packedUserOperation); //2
+       bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(packedUserOperation); //2
 
         bytes memory signature = packedUserOperation.signature;
-        address actualSigner = ECDSA.recover(userOpHash, signature);
+        address actualSigner = ECDSA.recover(userOpHash.toEthSignedMessageHash(), signature);
 
         assert(actualSigner == baseAccount.owner());
     }
 
+
+    function test_helperConfig() public {
+        vm.startPrank(baseAccount.owner());
+        address sender = helperConfig.getConfig().account;
+        vm.stopPrank();
+        assert(sender == 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
+    }
+
+
+    // sign userOp
+    // pass the userOp to bundlers
+    // bundlers will call entryPoint contract
+    // baseAccount will call validateUserOp function to check validation
+    function test_validateUserOp() public {
+        // Arrange
+        assert(usdc.balanceOf(address(baseAccount)) == 0);
+
+        HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
+
+        bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector,address(baseAccount),AMOUNT);
+        bytes memory executeCallData = abi.encodeWithSelector(BaseAccount.execute.selector, address(usdc), 0, functionData);
+
+        PackedUserOperation memory userOp = 
+            packedUserOp.generateSignedUserOp(executeCallData, config,address(baseAccount)); //1
+
+       bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(userOp); //2
+       uint256 missingAccountFunds = 1e18;
+    //    Act
+       vm.startPrank(config.entryPoint);
+       uint256 success = baseAccount.validateUserOp(userOp, userOpHash, missingAccountFunds);
+       vm.stopPrank();
+
+    //    Assert
+    assert(success == 0);
+    }
+
+
+    function test_entryPointCanExecuteFunctions() public {
+        // Arrange
+        assert(usdc.balanceOf(address(baseAccount)) == 0);
+
+        HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
+
+        bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector,address(baseAccount),AMOUNT);
+        bytes memory executeCallData = abi.encodeWithSelector(BaseAccount.execute.selector, address(usdc), 0, functionData);
+
+        PackedUserOperation memory userOp = 
+            packedUserOp.generateSignedUserOp(executeCallData, config,address(baseAccount)); //1
+
+        // Act
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+
+        vm.startPrank(user);
+        IEntryPoint(config.entryPoint).handleOps(ops, payable(user));
+        vm.stopPrank();
+
+        assert(usdc.balanceOf(address(baseAccount)) == AMOUNT);
+    }
 }
