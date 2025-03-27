@@ -7,24 +7,21 @@ import "lib/forge-std/src/console.sol";
 import "lib/forge-std/src/Vm.sol";
 import {BaseAccount} from "src/ethereum/BaseAccount.sol";
 import {EntryPoint} from "lib/account-abstraction/contracts/core/EntryPoint.sol";
-import {HelperConfig} from "script/HelperConfig.s.sol";
 import "lib/account-abstraction/contracts/interfaces/IEntryPoint.sol";
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+import {AnvilHelperConfig} from "script/AnvilScript/AnvilHelperConfig.s.sol";
 
-contract PackedUserOp is Script {
+
+contract getUserOp is Script {
     using MessageHashUtils for bytes32;
 
-    HelperConfig public helperConfig;
+    AnvilHelperConfig public anvilHelperConfig;
 
     uint256 constant ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
-    function run() public {
-        helperConfig = new HelperConfig();
-    }
-
     function generateSignedUserOp(
         bytes memory executionData,
-        HelperConfig.NetworkConfig memory config,
+        AnvilHelperConfig.NetworkConfig memory config,
         address baseAccount
     ) public returns(PackedUserOperation memory){
         uint256 nonce = vm.getNonce(baseAccount);
@@ -38,11 +35,7 @@ contract PackedUserOp is Script {
         uint8 v;
         bytes32 r;
         bytes32 s;
-        if(block.chainid == 31337){
-            (v,r,s) = vm.sign(ANVIL_PRIVATE_KEY,digest);
-        }else {
-            (v,r,s) = vm.sign(config.account,digest);
-        }
+        (v,r,s) = vm.sign(ANVIL_PRIVATE_KEY,digest);
 
         // AA user will sign the userOp -> Later after for verification we will use this signature
         bytes memory sig = abi.encodePacked(r,s,v);

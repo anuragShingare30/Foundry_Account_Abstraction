@@ -15,6 +15,19 @@ import {PackedUserOp} from "script/PackedUserOp.s.sol";
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
 
+/**
+    @notice BaseAccountTest Test contract
+    @author anurag shingare
+
+    @notice We will try to mimic the Account-Abstraction(AA) flow :
+        1. Multiple AA user signed the userOp -> Bundlers will collect multiple userOps
+        2. Bundlers will simulate each userOps -> EntryPoint contract will verify the userOps with contract Account
+        3. EntryPoint contract  verifies the userOps -> Paymaster(if exist) approves the userOps
+        4. After verification -> contract account will executes the function and perform the state change!!!!
+    @dev This test contract contains some function which tries to follow the above flow for AA!!!!!!!!!
+ */
+
+
 
 contract BaseaccountTest is Test{
     using MessageHashUtils for bytes32;
@@ -39,9 +52,17 @@ contract BaseaccountTest is Test{
         vm.deal(address(baseAccount), 2e18);
     }
 
+    // This indicates on which network we are working!!!!
+    function test_checkCurrentBaseAccountOwner() public {
+        address  owner = baseAccount.owner();
+        console.log("Cuurent baseAccount owner:", owner);
+        console.log("Current network chain-id:", block.chainid);
+    }
+
     /**
      * test_OwnerCanExecute TEST FUCNTION
      * By traditional metamask account == baseAccount.sol
+     * @notice Here we are checking that owner->baseAccount can call the execute function.
      * @dev baseAccount.sol will interact/send TNX to other DApps -> same as like by metamask account
      
      * @notice Owner(user) init. execute() -> baseAccount will interact with USDC contract
@@ -76,8 +97,10 @@ contract BaseaccountTest is Test{
         vm.stopPrank();
     }
 
-
+    // Main functions tests
+    // 2. entrypoint contract checks for valid userOps from the valid user
     function test_SigPackedUserOp() public {
+        // Arrange
         assert(usdc.balanceOf(address(baseAccount)) == 0);
 
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
@@ -85,14 +108,16 @@ contract BaseaccountTest is Test{
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector,address(baseAccount),AMOUNT);
         bytes memory executeCallData = abi.encodeWithSelector(BaseAccount.execute.selector, address(usdc), 0, functionData);
 
-        PackedUserOperation memory packedUserOperation = 
-            packedUserOp.generateSignedUserOp(executeCallData, config,address(baseAccount)); //1
+        PackedUserOperation memory userOp = 
+            packedUserOp.generateSignedUserOp(executeCallData, config, address(baseAccount)); //1
 
-       bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(packedUserOperation); //2
-
-        bytes memory signature = packedUserOperation.signature;
+       bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(userOp); //2
+        
+        // Act
+        bytes memory signature = userOp.signature;
         address actualSigner = ECDSA.recover(userOpHash.toEthSignedMessageHash(), signature);
 
+        // Assert 
         assert(actualSigner == baseAccount.owner());
     }
 
@@ -108,7 +133,9 @@ contract BaseaccountTest is Test{
     // sign userOp
     // pass the userOp to bundlers
     // bundlers will call entryPoint contract
-    // baseAccount will call validateUserOp function to check validation
+    // entrypoint and baseAccount contract will verifies each userOp
+    // After verification -> baseAccount contract will execute the function!!!
+    // 3. baseAccount and entryPoint contract will verify userOps
     function test_validateUserOp() public {
         // Arrange
         assert(usdc.balanceOf(address(baseAccount)) == 0);
@@ -132,7 +159,13 @@ contract BaseaccountTest is Test{
     assert(success == 0);
     }
 
+    function test_checkValidatePaymasterOp() public {
+        // here, paymaster will verifies and approve the userOp
+        // we can implement validatePaymasterOp() function!!!
+    }
 
+    // 4. baseAccount executes the function
+    // 4. Or, entryPoint contract will execute the function
     function test_entryPointCanExecuteFunctions() public {
         // Arrange
         assert(usdc.balanceOf(address(baseAccount)) == 0);
