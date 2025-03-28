@@ -18,8 +18,18 @@ import {getUserOp} from "script/AnvilScript/getUserOp.s.sol";
 
 /**
     @notice NewBaseAccountTest Test contract
+    @notice We will try to mimic the Account-Abstraction(AA) flow :
+        1. Multiple AA user signed the userOp -> Bundlers will collect multiple userOps
+        2. Bundlers will simulate each userOps -> EntryPoint contract will verify the userOps with contract Account
+        3. EntryPoint contract  verifies the userOps -> Paymaster(if exist) approves the userOps
+        4. After verification -> contract account will executes the function and perform the state change!!!!
 
     @dev This test is fully for anvil
+    @dev The contracts contains the following imp. function
+        baseAccount -> validateUserOps(userOp, userOpHash,missingAccfunds)
+        EntryPoint  -> getUserOpHash(userOp), handleOps(ops[], beneficiaryAddress)
+        getUserOp -> generateSignedUserOp(executionData,config,baseAccount)
+        signature verification -> ECDSA -> recover(userOpHash, userOps_Signature)
  */
 
 contract NewBaseAccountTest is Test {
@@ -70,7 +80,13 @@ contract NewBaseAccountTest is Test {
         vm.stopPrank();
     }
 
+    /**
+        @notice test_entryPointVerifiesSignature Test function
+        @notice Funtion check for valid user signed the userOp that is submitted to bundlers
 
+        @dev We will compare the address of the signer of userOp and baseAccount owner
+        @dev This is second-step in our AA flow!!!
+     */
     function test_entryPointVerifiesSignature() public {
 
         AnvilHelperConfig.NetworkConfig memory config = anvilConfig.getAnvilConfig();
@@ -89,6 +105,76 @@ contract NewBaseAccountTest is Test {
         console.log("AA user who signed the userOps:", baseAccount.owner());
 
         assert(userOpsSigner == baseAccount.owner());
+    }
+
+
+    function test_checkValidateUserOp() public {
+        assert(usdc.balanceOf(address(baseAccount)) == 0);
+
+        AnvilHelperConfig.NetworkConfig memory config = anvilConfig.getAnvilConfig();
+
+        uint256 SIGNATURE_VALIDATION_FAILED = 1;
+        uint256 SIGNATURE_VALIDATION_SUCCESS = 0;
+
+        bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, 
+            address(baseAccount),AMOUNT
+        );
+        bytes memory executionData = abi.encodeWithSelector(baseAccount.execute.selector, 
+            address(usdc),0,functionData
+        );
+
+        PackedUserOperation memory userOp = getuserop.generateSignedUserOp(executionData, config, address(baseAccount));
+        bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(userOp);
+        uint256 missingAccountFunds = 1e18;
+        
+        address entryPointAddress = baseAccount.getEntryPoint();
+        console.log("Entry point contract address from helper config:",entryPointAddress);
+        
+        
+        vm.startPrank(entryPointAddress);
+        uint256 validationData = baseAccount.validateUserOp(userOp, userOpHash, missingAccountFunds);
+        console.log("SIGNATURE_VALIDATION_SUCCESS:",validationData);
+        vm.stopPrank();
+
+        // check for validate userOP
+        assert(validationData == SIGNATURE_VALIDATION_SUCCESS);
+        // check the balance
+        console.log("Balance after validation:",usdc.balanceOf(address(baseAccount)));
+    }
+
+
+    function test_checkExecuteByEntryPoint() public {
+        assert(usdc.balanceOf(address(baseAccount)) == 0);
+
+        // Arrange
+        AnvilHelperConfig.NetworkConfig memory config = anvilConfig.getAnvilConfig();
+
+        bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, 
+            address(baseAccount),AMOUNT
+        );
+        bytes memory executionData = abi.encodeWithSelector(baseAccount.execute.selector, 
+            address(usdc),0,functionData
+        );
+
+        // get userOP, userOpHash and missingFunds
+        PackedUserOperation memory userOp = getuserop.generateSignedUserOp(executionData, config, address(baseAccount));
+        bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(userOp);
+        uint256 missingAccountFunds = 1e18;
+
+
+        // Act
+        address entryPointAddress = baseAccount.getEntryPoint();
+        console.log("Entry point contract address from helper config:",entryPointAddress);
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+
+        vm.startPrank(baseAccount.owner());
+        // baseAccount.execute(address(usdc), 0, functionData);
+        IEntryPoint(entryPointAddress).handleOps(ops, payable(user));
+        vm.stopPrank();
+
+        console.log("Beneficiary address:",usdc.balanceOf(user));
+        assert(usdc.balanceOf(address(baseAccount)) == AMOUNT);
     }
 
 }

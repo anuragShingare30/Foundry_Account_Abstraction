@@ -24,7 +24,7 @@ contract getUserOp is Script {
         AnvilHelperConfig.NetworkConfig memory config,
         address baseAccount
     ) public returns(PackedUserOperation memory){
-        uint256 nonce = vm.getNonce(baseAccount);
+        uint256 nonce = vm.getNonce(baseAccount) - 1;
         PackedUserOperation memory userOp = _generateUnSignedUserOp(baseAccount, nonce, executionData);
 
         // get the userOpHash
