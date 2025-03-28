@@ -168,9 +168,8 @@ contract NewBaseAccountTest is Test {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
 
-        vm.startPrank(baseAccount.owner());
-        // baseAccount.execute(address(usdc), 0, functionData);
-        IEntryPoint(entryPointAddress).handleOps(ops, payable(user));
+        vm.startPrank(user);
+        IEntryPoint(config.entryPoint).handleOps(ops, payable(user)); // error
         vm.stopPrank();
 
         console.log("Beneficiary address:",usdc.balanceOf(user));
